@@ -29,7 +29,6 @@
 #include <pthread.h>
 
 #include "lfq.h"
-#include "atomic.h"
 
 static size_t iterations;
 static volatile unsigned long input = 0;
@@ -43,7 +42,7 @@ void *producer(void *arg)
 	for (i = 0; i < iterations; ++i) {
 		ptr = (unsigned long *)malloc(sizeof(unsigned long));
 		assert(ptr);
-		*ptr = AAF(&input, 1);
+		*ptr = __sync_add_and_fetch(&input, 1);
 		while (!queue_enqueue(q, (void *)ptr))
 			;
 	}
@@ -56,9 +55,9 @@ void *consumer(void *arg)
 	unsigned long *ptr;
 	queue_t q = (queue_t)arg;
 	for (i = 0; i < iterations; ++i) {
-		while (!(ptr = (unsigned long *)queue_dequeue(q)))
+		while ((ptr = (unsigned long *)queue_dequeue(q)) == NULL)
 			;
-		AAF(&output, *ptr);
+		__sync_add_and_fetch(&output, *ptr);
 		*ptr = 0;
 		free((void *)ptr);
 	}
@@ -79,22 +78,18 @@ int main(int argc, char **argv)
 		fprintf(stderr, "%s: need an even number of threads\n", argv[0]);
 		return 1;
 	}
-	fprintf(stdout, "arch:%s, mode:%zu-bit, atomics:%s\n", ARCH, sizeof(void *) * 8,
-#ifdef GCC_ATOMIC_BUILTINS
-		"gcc"
-#else
-		"asm"
-#endif
-		);
+	fprintf(stdout, "arch:%s, mode:%zu-bit\n", ARCH, sizeof(void *) * 8);
 	t = (pthread_t *)calloc(atoi(argv[1]), sizeof(pthread_t));
 	iterations = atoi(argv[2]);
-	for (i = 0; i < atoi(argv[1]); ++i)
-		assert(!pthread_create(&(t[i]), NULL,
-			(i % 2) ? consumer : producer, q));
-	for (i = 0; i < atoi(argv[1]); ++i)
-		assert(!pthread_join(t[i], NULL));
-	for (i = 0; i <= input; ++i)
+	for (i = 0; i < atoi(argv[1]); ++i) {
+		assert(pthread_create(&(t[i]), NULL, (i % 2) ? consumer : producer, q) == 0);
+	}
+	for (i = 0; i < atoi(argv[1]); ++i) {
+		assert(pthread_join(t[i], NULL) == 0);
+	}
+	for (i = 0; i <= input; ++i) {
 		verif += i;
+	}
 	printf("input SUM[0..%lu]=%lu output=%lu\n", input, verif, output);
 	return 0;
 }

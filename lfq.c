@@ -26,18 +26,15 @@
 #include <stdlib.h>
 
 #include "lfq.h"
-#include "atomic.h"
-
-#define E(val) ((element_t *)&val)
 
 typedef struct {
-	unsigned long ptr;
+	void *ptr;
 	unsigned long ref;
 } element_t;
 
 struct _queue_t {
 	size_t depth;
-	element_t *e;
+	__uint128_t *e;
 	unsigned long rear;
 	unsigned long front;
 };
@@ -45,66 +42,84 @@ struct _queue_t {
 queue_t queue_create(size_t depth)
 {
 	queue_t q = (queue_t)malloc(sizeof(struct _queue_t));
-	if (q) {
+	if (q != NULL) {
 		q->depth = depth;
 		q->rear = q->front = 0;
-		q->e = (element_t *)calloc(depth, sizeof(element_t));
+		q->e = calloc(depth, sizeof(*q->e));
 	}
 	return q;
 }
 
 int queue_enqueue(volatile queue_t q, void *data)
 {
-	DWORD old, new;
+	__uint128_t _o, _n;
 	unsigned long rear, front;
-	do {
+	element_t *old = (element_t *)&_o;
+	element_t *new = (element_t *)&_n;
+	for (;;) {
 		rear = q->rear;
-		old = *((DWORD *)&(q->e[rear % q->depth]));
+		_o = q->e[rear % q->depth];
 		front = q->front;
-		if (rear != q->rear)
-			continue;
-		if (rear == (q->front + q->depth))  {
-			if (q->e[front % q->depth].ptr && front == q->front)
-				return 0;
-			CAS(&(q->front), front, front + 1);
+		if (rear != q->rear) {
 			continue;
 		}
-		if (!E(old)->ptr) {
-			E(new)->ptr = (uintptr_t)data;
-			E(new)->ref  = ((element_t *)&old)->ref + 1;
-			if (DWCAS((DWORD *)&(q->e[rear % q->depth]), old, new)) {
-				CAS(&(q->rear), rear, rear + 1);
+		if (rear == q->front + q->depth)  {
+			element_t *cur = (element_t *)&q->e[front % q->depth];
+			if (cur->ptr != NULL && front == q->front) {
+				return 0;
+			}
+			__sync_bool_compare_and_swap(&q->front, front, front + 1);
+			continue;
+		}
+		if (old->ptr == NULL) {
+			new->ptr = data;
+			new->ref = old->ref + 1;
+			if (__sync_bool_compare_and_swap(&q->e[rear % q->depth], _o, _n)) {
+				__sync_bool_compare_and_swap(&q->rear, rear, rear + 1);
 				return 1;
 			}
-		} else if (q->e[rear % q->depth].ptr)
-			CAS(&(q->rear), rear, rear + 1);
-	} while(1);
+		} else {
+			element_t *cur = (element_t *)&q->e[rear % q->depth];
+			if (cur->ptr != NULL) {
+				__sync_bool_compare_and_swap(&q->rear, rear, rear + 1);
+			}
+		}
+	}
 }
 
 void *queue_dequeue(volatile queue_t q)
 {
-	DWORD old, new;
+	__uint128_t _o, _n;
 	unsigned long front, rear;
-	do {
+	element_t *old = (element_t *)&_o;
+	element_t *new = (element_t *)&_n;
+	for (;;) {
 		front = q->front;
-		old = *((DWORD *)&(q->e[front % q->depth]));
+		_o = q->e[front % q->depth];
 		rear = q->rear;
-		if (front != q->front)
-			continue;
-		if (front == q->rear) {
-			if (!q->e[rear % q->depth].ptr && rear == q->rear)
-				return NULL;
-			CAS(&(q->rear), rear, rear + 1);
+		if (front != q->front) {
 			continue;
 		}
-		if (E(old)->ptr) {
-			E(new)->ptr = 0;
-			E(new)->ref = E(old)->ref + 1;
-			if (DWCAS((DWORD *)&(q->e[front % q->depth]), old, new)) {
-				CAS(&(q->front), front, front + 1);
-				return (void *)((element_t *)&old)->ptr;
+		if (front == q->rear) {
+			element_t *cur = (element_t *)&q->e[rear % q->depth];
+			if (cur->ptr != NULL && rear == q->rear) {
+				return NULL;
 			}
-		} else if (!q->e[front % q->depth].ptr)
-			CAS(&(q->front), front, front + 1);
-	} while(1);
+			__sync_bool_compare_and_swap(&q->rear, rear, rear + 1);
+			continue;
+		}
+		if (old->ptr != NULL) {
+			new->ptr = NULL;
+			new->ref = old->ref + 1;
+			if (__sync_bool_compare_and_swap(&q->e[front % q->depth], _o, _n)) {
+				__sync_bool_compare_and_swap(&q->front, front, front + 1);
+				return old->ptr;
+			}
+		} else {
+			element_t *cur = (element_t *)&q->e[front % q->depth];
+			if (cur->ptr == NULL) {
+				__sync_bool_compare_and_swap(&q->front, front, front + 1);
+			}
+		}
+	}
 }

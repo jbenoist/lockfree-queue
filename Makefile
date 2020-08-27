@@ -6,13 +6,9 @@ OBJDIR 	= .objs
 CSRC 	= $(shell ls *.c)
 OBJS 	= $(patsubst %.c,$(OBJDIR)/%.o, $(CSRC))
 LDFLAGS	= -lpthread
-ARCH	= $(shell uname -m)
-CFLAGS	= -ggdb -O3 -Wall -fno-strict-aliasing \
-	  -funroll-loops -fomit-frame-pointer \
-	  -DARCH=\"$(ARCH)\"
-#CFLAGS += -mcx16 -DGCC_ATOMIC_BUILTINS
-#CFLAGS += -m64 -DGCC_ATOMIC_BUILTINS
-#CFLAGS += -m32
+ARCH	= sandybridge
+CFLAGS	= -DARCH=\"${ARCH}\" -march=${ARCH} \
+	  -mcx16 -ggdb -O3 -Wall -funroll-loops -fomit-frame-pointer
 
 all: $(OBJDIR) $(OBJS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
