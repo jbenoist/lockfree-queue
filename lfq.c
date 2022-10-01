@@ -32,16 +32,16 @@ typedef struct {
 	unsigned long ref;
 } element_t;
 
-struct _queue_t {
+struct _lfq_t {
 	size_t depth;
 	__uint128_t *e;
 	unsigned long rear;
 	unsigned long front;
 };
 
-queue_t queue_create(size_t depth)
+lfq_t lfq_create(size_t depth)
 {
-	queue_t q = (queue_t)malloc(sizeof(struct _queue_t));
+	lfq_t q = (lfq_t)malloc(sizeof(struct _lfq_t));
 	if (q != NULL) {
 		q->depth = depth;
 		q->rear = q->front = 0;
@@ -50,7 +50,13 @@ queue_t queue_create(size_t depth)
 	return q;
 }
 
-int queue_enqueue(volatile queue_t q, void *data)
+void lfq_free(lfq_t q)
+{
+  free(q->e);
+  free(q);
+}
+
+int lfq_enqueue(volatile lfq_t q, void *data)
 {
 	__uint128_t _o, _n;
 	unsigned long rear, front;
@@ -87,7 +93,7 @@ int queue_enqueue(volatile queue_t q, void *data)
 	}
 }
 
-void *queue_dequeue(volatile queue_t q)
+void *lfq_dequeue(volatile lfq_t q)
 {
 	__uint128_t _o, _n;
 	unsigned long front, rear;

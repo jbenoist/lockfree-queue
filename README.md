@@ -6,17 +6,17 @@ with thousands of concurrent threads adding and consuming data on them.
 The techniques described above can be used to implement an fully lockfree
 array-based queue:
 ```
-lockfree queue primitives
-typedef struct _queue_t *queue_t;
-queue_t queue_create(size_t);
-void *queue_dequeue(queue_t);
-int queue_enqueue(queue_t, void *);
+/* lockfree queue primitives */
+typedef struct _lfq_t *lfq_t;
+lfq_t lfq_create(size_t);
+void *lfq_dequeue(lfq_t);
+int lfq_enqueue(lfq_t, void *);
 ```
 
-The desired depth of the queue is defined at creation time by `queue_create`,
-`queue_dequeue` returns the element address or `NULL` if the queue happens to
-be empty, the address of the element to queue is passed to `queue_enqueue`
-which returns `0` if the operation succeeded, and `1` if the queue is full.
+The desired depth of the queue is defined at creation time by `lfq_create`,
+`lfq_dequeue` returns the element address or `NULL` if the queue happens to
+be empty, the address of the element to queue is passed to `lfq_enqueue`
+which returns `1` if the operation succeeded, and `0` if the queue is full.
 
 Internal data-structures, initialization:
 ```
@@ -29,16 +29,16 @@ Internal data-structures, initialization:
 35 	unsigned long ref;
 36 } element_t;
 37
-38 struct _queue_t {
+38 struct _lfq_t {
 39 	size_t depth;
 40 	element_t *e;
 41 	unsigned long rear;
 42 	unsigned long front;
 43 };
 44
-45 queue_t queue_create(size_t depth)
+45 lfq_t lfq_create(size_t depth)
 46 {
-47 	queue_t q = (queue_t)malloc(sizeof(struct _queue_t));
+47 	lfq_t q = (lfq_t)malloc(sizeof(struct _lfq_t));
 48 	if (q) {
 49 		q->depth = depth;
 50 		q->rear = q->front = 0;
@@ -50,7 +50,7 @@ Internal data-structures, initialization:
 
 `element_t` is the double-word aligned structure that will hold the address of
 elements enqueued and a count of updates to the slots.
-`queue_t` contains the queue metadata with the capacity in depth, boundary
+`lfq_t` contains the queue metadata with the capacity in depth, boundary
 information in rear and front, and e is the contiguous storage for up to depth
 elements.
 
@@ -58,7 +58,7 @@ The enqueue algorithm:
 ```
 # file: lfq.c
 
-e56 int queue_enqueue(volatile queue_t q, void *data)
+e56 int lfq_enqueue(volatile lfq_t q, void *data)
 e57 {
 e58 	DWORD old, new;
 e59 	unsigned long rear, front;
@@ -124,7 +124,7 @@ the dequeue algorithm
 ```
 # file: lfq.c
 
- d84 void *queue_dequeue(volatile queue_t q)
+ d84 void *lfq_dequeue(volatile lfq_t q)
  d85 {
  d86 	DWORD old, new;
  d87 	unsigned long front, rear;
@@ -158,8 +158,8 @@ the enqueue.
 
 To verify the correctness of the queue implementation, we write a simple
 program that spawns an even number of worker threads, with the first half of
-those workers producing content and pushing it with `queue_enqueue`, and the
-other half consumes it with `queue_dequeue`.
+those workers producing content and pushing it with `lfq_enqueue`, and the
+other half consumes it with `lfq_dequeue`.
 
 verification program
 ```
@@ -173,12 +173,12 @@ verification program
 39 {
 40 	int i = 0;
 41 	unsigned long *ptr;
-42 	queue_t q = (queue_t)arg;
+42 	lfq_t q = (lfq_t)arg;
 43 	for (i = 0; i < iterations; ++i) {
 44 		ptr = (unsigned long *)malloc(sizeof(unsigned long));
 45 		assert(ptr);
 46 		*ptr = AAF(&input, 1);
-47 		while (!queue_enqueue(q, (void *)ptr))
+47 		while (!lfq_enqueue(q, (void *)ptr))
 48 			;
 49 	}
 50 	return NULL;
@@ -188,9 +188,9 @@ verification program
 54 {
 55 	int i = 0;
 56 	unsigned long *ptr;
-57 	queue_t q = (queue_t)arg;
+57 	lfq_t q = (lfq_t)arg;
 58 	for (i = 0; i < iterations; ++i) {
-59 		while (!(ptr = (unsigned long *)queue_dequeue(q)))
+59 		while (!(ptr = (unsigned long *)lfq_dequeue(q)))
 60 			;
 61 		AAF(&output, *ptr);
 62 		*ptr = 0;
@@ -204,7 +204,7 @@ verification program
 70 	int i;
 71 	pthread_t *t;
 72 	unsigned long verif = 0;
-73 	queue_t q = queue_create(2);
+73 	lfq_t q = lfq_create(2);
 74 	if (argc != 3) {
 75 		fprintf(stderr, "%s: <nthreads> <iterations>\n", argv[0]);
 76 		return 1;

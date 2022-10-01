@@ -38,12 +38,12 @@ void *producer(void *arg)
 {
 	int i = 0;
 	unsigned long *ptr;
-	queue_t q = (queue_t)arg;
+	lfq_t q = (lfq_t)arg;
 	for (i = 0; i < iterations; ++i) {
 		ptr = (unsigned long *)malloc(sizeof(unsigned long));
 		assert(ptr);
 		*ptr = __sync_add_and_fetch(&input, 1);
-		while (!queue_enqueue(q, (void *)ptr))
+		while (!lfq_enqueue(q, (void *)ptr))
 			;
 	}
 	return NULL;
@@ -53,9 +53,9 @@ void *consumer(void *arg)
 {
 	int i = 0;
 	unsigned long *ptr;
-	queue_t q = (queue_t)arg;
+	lfq_t q = (lfq_t)arg;
 	for (i = 0; i < iterations; ++i) {
-		while ((ptr = (unsigned long *)queue_dequeue(q)) == NULL)
+		while ((ptr = (unsigned long *)lfq_dequeue(q)) == NULL)
 			;
 		__sync_add_and_fetch(&output, *ptr);
 		*ptr = 0;
@@ -69,7 +69,7 @@ int main(int argc, char **argv)
 	int i;
 	pthread_t *t;
 	unsigned long verif = 0;
-	queue_t q = queue_create(2);
+	lfq_t q = lfq_create(2);
 	if (argc != 3) {
 		fprintf(stderr, "%s: <nthreads> <iterations>\n", argv[0]);
 		return 1;

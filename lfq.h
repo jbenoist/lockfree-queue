@@ -28,10 +28,11 @@
 
 #include <stdint.h>
 
-typedef struct _queue_t *queue_t;
+typedef struct _lfq_t *lfq_t;
 
-queue_t queue_create(size_t);
-void *queue_dequeue(queue_t);
-int queue_enqueue(queue_t, void *);
+lfq_t lfq_create(size_t);
+void *lfq_dequeue(lfq_t);
+int lfq_enqueue(lfq_t, void *);
+void lfq_free(lfq_t);
 
 #endif /* _JBE_LFQ_H */
